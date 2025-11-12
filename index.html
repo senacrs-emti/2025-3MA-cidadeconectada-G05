@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Consumo Elétrico por Cômodo</title>
+  <style>
+    :root{
+      --bg:#0e1117; --card:#161a22; --soft:#0f1420; --text:#e6ebf5; --muted:#9aa6bf;
+      --accent:#76a8ff; --border:#22283a; --ok:#77e2ad; --bad:#ff9a7b; --warn:#ffd27a;
+    }
+    *{box-sizing:border-box;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    body{margin:0;background:var(--bg);color:var(--text)}
+    header{padding:24px 16px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#121725,#0e1117)}
+    .wrap{max-width:1200px;margin:0 auto;padding:16px}
+    h1{margin:0 0 6px;font-size:24px}
+    .lead{margin:0;color:var(--muted)}
+
+    .layout{display:grid;grid-template-columns: 1.1fr 1.3fr;gap:16px;margin-top:16px}
+    @media (max-width: 980px){ .layout{grid-template-columns:1fr} }
+
+    .panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px}
+    .panel h2{margin:0 0 12px;font-size:16px;color:#cfd7ea}
+
+    /* CASA (grade de cômodos) */
+    .house{
+      display:grid;gap:10px;
+      grid-template-areas:
+        "sala cozinha cozinha"
+        "quarto cozinha cozinha"
+        "banho lavanderia escritorio";
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+    .room{
+      background:var(--soft);border:1px solid var(--border);border-radius:14px;
+      padding:14px;cursor:pointer;position:relative;min-height:96px;
+      transition:transform .1s ease, border-color .1s ease, box-shadow .1s ease;
+    }
+    .room:hover{transform:translateY(-2px);border-color:#2b3248;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+    .room.active{outline:2px solid var(--accent);box-shadow:0 0 0 6px rgba(118,168,255,.12) inset}
+    .room h3{margin:0 0 4px;font-size:14px}
+    .badge{position:absolute;right:10px;top:10px;font-size:11px;color:#0b1019;background:var(--accent);padding:2px 8px;border-radius:999px}
+    .room.sala{grid-area:sala}
+    .room.cozinha{grid-area:cozinha}
+    .room.quarto{grid-area:quarto}
+    .room.banho{grid-area:banho}
+    .room.lavanderia{grid-area:lavanderia}
+    .room.escritorio{grid-area:escritorio}
+
+    /* Lista de aparelhos do cômodo */
+    .device-list{display:grid;grid-template-columns:1fr 1fr; gap:10px}
+    @media (max-width: 700px){ .device-list{grid-template-columns:1fr} }
+    .device{
+      background:var(--soft);border:1px solid var(--border);border-radius:12px;padding:12px;
+      display:flex;justify-content:space-between;align-items:center;gap:10px
+    }
+    .device .meta{font-size:12px;color:var(--muted)}
+    .device .name{font-weight:600}
+    .btn{border:none;border-radius:10px;padding:8px 12px;font-weight:700;cursor:pointer}
+    .btn-primary{background:var(--accent);color:#0b1019}
+    .btn-ghost{background:#273049;color:#cfe0ff}
+    .controls-top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+    .input{
+      background:#0f1420;border:1px solid var(--border);color:var(--text);
+      border-radius:10px;padding:10px 12px;min-width:180px
+    }
+
+    /* Tabela de seleção */
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:12px;border-bottom:1px solid var(--border);text-align:left}
+    th{color:var(--muted);font-weight:600}
+    td.right, th.right{text-align:right}
+    .mini{font-size:12px;color:var(--muted)}
+    .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;margin-left:8px}
+    .tag-ok{background:var(--ok);color:#0b1019}
+    .tag-warn{background:var(--warn);color:#0b1019}
+    .link{color:#b8cdff;text-decoration:underline dotted;cursor:pointer}
+
+    .row-actions{display:flex;gap:8px;justify-content:flex-end}
+    .chip{font-size:12px;padding:3px 8px;border-radius:999px;background:#222a3b;border:1px solid var(--border)}
+    .muted{color:var(--muted)}
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>Calculadora de Consumo — por Cômodo</h1>
+    <p class="lead">Clique no cômodo, adicione os aparelhos típicos com médias de uso e informe sua tarifa (R$/kWh).</p>
+  </div>
+</header>
+
+<main class="wrap layout">
+  <!-- COLUNA ESQUERDA: MAPA DA CASA -->
+  <section class="panel">
+    <h2>Casa</h2>
+    <div id="house" class="house">
+      <div class="room sala" data-room="Sala"><h3>Sala</h3><span class="badge">clique</span></div>
+      <div class="room cozinha" data-room="Cozinha"><h3>Cozinha</h3><span class="badge">clique</span></div>
+      <div class="room quarto" data-room="Quarto"><h3>Quarto</h3><span class="badge">clique</span></div>
+      <div class="room banho" data-room="Banheiro"><h3>Banheiro</h3><span class="badge">clique</span></div>
+      <div class="room lavanderia" data-room="Lavanderia"><h3>Lavanderia</h3><span class="badge">clique</span></div>
+      <div class="room escritorio" data-room="Escritório"><h3>Escritório</h3><span class="badge">clique</span></div>
+    </div>
+  </section>
+
+  <!-- COLUNA DIREITA: DISPOSITIVOS DO CÔMODO + ITENS SELECIONADOS -->
+  <section class="panel">
+    <div class="controls-top">
+      <input id="tarifa" type="number" step="0.01" min="0" class="input" placeholder="Tarifa (R$/kWh) — ex: 0,95">
+      <span class="chip">médias de uso aplicadas automaticamente</span>
+      <span class="mini">Pode personalizar depois linha a linha (opção <span class="link">editar</span>).</span>
+    </div>
+
+    <div id="roomName" class="muted" style="margin-bottom:8px">Selecione um cômodo para ver os aparelhos mais comuns.</div>
+    <div id="roomDevices" class="device-list" style="margin-bottom:14px"></div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Aparelho</th>
+          <th>Cômodo</th>
+          <th class="right">Potência (W)</th>
+          <th class="right">Qtd</th>
+          <th class="right">kWh/mês <span class="mini">(média)</span></th>
+          <th class="right">R$/mês</th>
+          <th class="right"></th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+      <tfoot>
+        <tr>
+          <td colspan="4" class="right">Total</td>
+          <td class="right" id="totalKwh">0,00</td>
+          <td class="right" id="totalCost">R$ 0,00</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+    <div class="mini" style="margin-top:8px">
+      fórmula: <strong>kWh/mês = (W × horas/dia × dias/mês × quantidade) ÷ 1000</strong>.  
+      As horas/dia e dias/mês começam com médias típicas por aparelho/cômodo.
+    </div>
+  </section>
+</main>
+
+<script>
+/**
+ * Catálogo por CÔMODO com médias de uso (horas/dia e dias/mês).
+ * Para geladeira/freezer, a potência é efetiva (média do ciclo).
+ */
+const ROOMS = {
+  "Sala": [
+    {nome:"TV 4K 50–65\"", w:120, h:4, d:30},
+    {nome:"TV LED 32–43\"", w:60, h:4, d:30},
+    {nome:"Videogame (PS/Xbox)", w:120, h:1, d:20},
+    {nome:"Ventilador de mesa", w:60, h:6, d:25},
+    {nome:"Lâmpada LED 12W", w:12, h:5, d:30},
+    {nome:"Soundbar/Receiver", w:40, h:3, d:20},
+    {nome:"Roteador Wi-Fi", w:10, h:24, d:30}
+  ],
+  "Cozinha": [
+    {nome:"Geladeira (frost-free)", w:70, h:24, d:30},
+    {nome:"Micro-ondas", w:1200, h:0.3, d:25},
+    {nome:"Air fryer", w:1400, h:0.4, d:20},
+    {nome:"Forno elétrico", w:1500, h:0.5, d:12},
+    {nome:"Purificador/Gelágua", w:100, h:4, d:30},
+    {nome:"Sanduicheira/Grill", w:750, h:0.2, d:12},
+    {nome:"Lâmpada LED 12W", w:12, h:4, d:30}
+  ],
+  "Quarto": [
+    {nome:"Ar-condicionado 9k BTU (split)", w:900, h:6, d:25},
+    {nome:"Ventilador de mesa", w:60, h:8, d:25},
+    {nome:"Notebook (uso)", w:60, h:5, d:25},
+    {nome:"Carregador de celular", w:10, h:2, d:30},
+    {nome:"Lâmpada LED 9W", w:9, h:5, d:30}
+  ],
+  "Banheiro": [
+    {nome:"Chuveiro elétrico (comum)", w:5500, h:0.33, d:30},
+    {nome:"Chuveiro elétrico (alta potência)", w:7500, h:0.33, d:30},
+    {nome:"Lâmpada LED 9W", w:9, h:2, d:30}
+  ],
+  "Lavanderia": [
+    {nome:"Máquina de lavar (médio)", w:500, h:0.5, d:20},
+    {nome:"Secadora de roupas", w:2000, h:0.3, d:12},
+    {nome:"Aspirador de pó", w:1000, h:0.2, d:12},
+    {nome:"Ferro de passar", w:1000, h:0.3, d:12},
+    {nome:"Lâmpada LED 12W", w:12, h:3, d:20}
+  ],
+  "Escritório": [
+    {nome:"Desktop + monitor", w:200, h:6, d:22},
+    {nome:"Notebook (uso)", w:60, h:6, d:22},
+    {nome:"Impressora (jato de tinta)", w:40, h:0.05, d:12},
+    {nome:"Roteador Wi-Fi", w:10, h:24, d:30},
+    {nome:"Lâmpada LED 9W", w:9, h:6, d:22}
+  ]
+};
+
+// Estado da seleção
+let ITEMS = []; // {id, room, nome, w, h, d, qty}
+let autoId = 1;
+
+// Utilidades
+const fmt = (n,d=2)=> (n||0).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
+const el = s => document.querySelector(s);
+const tbody = el('#tbody');
+
+function kwhMes(item){
+  return (item.w * item.h * item.d * item.qty) / 1000.0;
+}
+
+function recalc(){
+  const tarifa = parseFloat(el('#tarifa').value.replace(',','.')) || 0;
+  let tk = 0, tc = 0;
+
+  tbody.querySelectorAll('tr').forEach(tr=>{
+    const id = Number(tr.dataset.id);
+    const it = ITEMS.find(x=>x.id===id);
+    const kwh = kwhMes(it);
+    const cost = kwh * tarifa;
+
+    tr.querySelector('.kwh').textContent = fmt(kwh);
+    tr.querySelector('.cost').textContent = `R$ ${fmt(cost)}`;
+
+    tk += kwh; tc += cost;
+  });
+
+  el('#totalKwh').textContent = fmt(tk);
+  el('#totalCost').textContent = `R$ ${fmt(tc)}`;
+}
+
+function renderTable(){
+  tbody.innerHTML = '';
+  ITEMS.forEach(it=>{
+    const tr = document.createElement('tr');
+    tr.dataset.id = it.id;
+    tr.innerHTML = `
+      <td>${it.nome}<div class="mini">${it.h} h/dia • ${it.d} dias/mês <span class="tag tag-warn" title="média sugerida">média</span></div></td>
+      <td>${it.room}</td>
+      <td class="right">${fmt(it.w,0)}</td>
+      <td class="right">
+        <input type="number" class="qty" min="1" step="1" value="${it.qty}" style="width:70px;background:#0f1420;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px">
+      </td>
+      <td class="right kwh">0,00</td>
+      <td class="right cost">R$ 0,00</td>
+      <td class="right">
+        <div class="row-actions">
+          <button class="btn btn-ghost edit">editar</button>
+          <button class="btn" style="background:#2b3248;color:#cfe0ff" title="Remover">remover</button>
+        </div>
+      </td>
+    `;
+    // eventos
+    tr.querySelector('.qty').addEventListener('input', e=>{
+      const v = Math.max(1, parseInt(e.target.value||'1',10));
+      e.target.value = v; it.qty = v; recalc();
+    });
+    tr.querySelector('.edit').addEventListener('click', ()=> openEdit(it.id));
+    tr.querySelector('button[title="Remover"]').addEventListener('click', ()=>{
+      ITEMS = ITEMS.filter(x=>x.id!==it.id);
+      renderTable(); recalc();
+    });
+
+    tbody.appendChild(tr);
+  });
+  recalc();
+}
+
+// Editor pequeno para personalizar médias, se quiser
+function openEdit(id){
+  const it = ITEMS.find(x=>x.id===id);
+  const h = prompt(`Horas/dia para "${it.nome}" (atual: ${it.h})`, String(it.h));
+  if (h === null) return;
+  const d = prompt(`Dias/mês (atual: ${it.d})`, String(it.d));
+  if (d === null) return;
+  const hv = Math.max(0, parseFloat((h||'').replace(',','.'))||0);
+  const dv = Math.max(0, parseInt(d||'0',10)||0);
+  it.h = hv; it.d = dv;
+  renderTable(); recalc();
+}
+
+function addItem(room, dev){
+  ITEMS.push({
+    id:autoId++, room, nome:dev.nome, w:dev.w, h:dev.h, d:dev.d, qty:1
+  });
+  renderTable();
+}
+
+function renderRoomDevices(room){
+  const box = el('#roomDevices');
+  const title = el('#roomName');
+  title.textContent = `Aparelhos comuns em: ${room}`;
+  box.innerHTML = '';
+  (ROOMS[room]||[]).forEach(dev=>{
+    const card = document.createElement('div');
+    card.className = 'device';
+    card.innerHTML = `
+      <div>
+        <div class="name">${dev.nome}</div>
+        <div class="meta">${fmt(dev.w,0)} W • ${dev.h} h/dia • ${dev.d} dias/mês</div>
+      </div>
+      <button class="btn btn-primary">Adicionar</button>
+    `;
+    card.querySelector('button').addEventListener('click', ()=> addItem(room, dev));
+    box.appendChild(card);
+  });
+}
+
+function selectRoom(elRoom){
+  document.querySelectorAll('.room').forEach(r=>r.classList.remove('active'));
+  elRoom.classList.add('active');
+  const room = elRoom.dataset.room;
+  renderRoomDevices(room);
+}
+
+document.querySelectorAll('.room').forEach(r=>{
+  r.addEventListener('click', ()=> selectRoom(r));
+});
+
+el('#tarifa').addEventListener('input', recalc);
+
+// Sugestões iniciais (opcional): marcar Sala
+selectRoom(document.querySelector('.room.sala'));
+
+// Qualquer mudança de tamanho/zoom – recalcular formato
+window.addEventListener('load', recalc);
+</script>
+</body>
+</html>
