@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Consumo Elétrico por Cômodo</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
     :root{
       --bg:#0e1117; --card:#161a22; --soft:#0f1420; --text:#e6ebf5; --muted:#9aa6bf;
@@ -22,7 +25,7 @@
     .panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px}
     .panel h2{margin:0 0 12px;font-size:16px;color:#cfd7ea}
 
-    /* CASA (grade de cômodos) */
+    /* Cômodos */
     .house{
       display:grid;gap:10px;
       grid-template-areas:
@@ -47,7 +50,7 @@
     .room.lavanderia{grid-area:lavanderia}
     .room.escritorio{grid-area:escritorio}
 
-    /* Lista de aparelhos do cômodo */
+    /* aparelhos */
     .device-list{display:grid;grid-template-columns:1fr 1fr; gap:10px}
     @media (max-width: 700px){ .device-list{grid-template-columns:1fr} }
     .device{
@@ -90,7 +93,7 @@
 </header>
 
 <main class="wrap layout">
-  <!-- COLUNA ESQUERDA: MAPA DA CASA -->
+  <!-- MAPA DA CASA -->
   <section class="panel">
     <h2>Casa</h2>
     <div id="house" class="house">
@@ -103,7 +106,7 @@
     </div>
   </section>
 
-  <!-- COLUNA DIREITA: DISPOSITIVOS DO CÔMODO + ITENS SELECIONADOS -->
+  <!-- ELETRODOMESTICOS E SELECIONAMENTO-->
   <section class="panel">
     <div class="controls-top">
       <input id="tarifa" type="number" step="0.01" min="0" class="input" placeholder="Tarifa (R$/kWh) — ex: 0,95">
@@ -141,13 +144,42 @@
       As horas/dia e dias/mês começam com médias típicas por aparelho/cômodo.
     </div>
   </section>
+
+  <!-- GRAFICO E DICAS -->
+  <section class="panel" style="grid-column: 1 / -1; margin-top: 4px;">
+    <h2>Resumo visual & dicas</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <canvas id="chartShare" height="120"></canvas>
+      </div>
+      <div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr>
+              <th style="text-align:left;color:var(--muted);padding:8px 6px;border-bottom:1px solid var(--border)">Top 5 consumidores</th>
+              <th style="text-align:right;color:var(--muted);padding:8px 6px;border-bottom:1px solid var(--border)">kWh/mês</th>
+              <th style="text-align:right;color:var(--muted);padding:8px 6px;border-bottom:1px solid var(--border)">R$/mês</th>
+            </tr>
+          </thead>
+          <tbody id="top5Body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
+
+    <div>
+      <h3 style="margin:0 0 6px;font-size:15px;color:#cfd7ea">Como reduzir seu consumo</h3>
+      <ul id="tipsList" style="margin:6px 0 0 18px; color:#cfd7ea"></ul>
+      <p class="mini" style="margin-top:6px">As sugestões levam em conta os aparelhos que você adicionou e boas práticas gerais.</p>
+    </div>
+  </section>
 </main>
 
 <script>
-/**
- * Catálogo por CÔMODO com médias de uso (horas/dia e dias/mês).
- * Para geladeira/freezer, a potência é efetiva (média do ciclo).
- */
+/* ELETRODOMÉSTICOS POR CÔMODO com médias de uso: horas/dia e dias/mês.
+  Para geladeiras e etc. a potência é efetiva: média do ciclo.*/
+ 
 const ROOMS = {
   "Sala": [
     {nome:"TV 4K 50–65\"", w:120, h:4, d:30},
@@ -195,17 +227,118 @@ const ROOMS = {
   ]
 };
 
-// Estado da seleção
+// Seleção
 let ITEMS = []; // {id, room, nome, w, h, d, qty}
 let autoId = 1;
 
-// Utilidades
+// Outros
 const fmt = (n,d=2)=> (n||0).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
 const el = s => document.querySelector(s);
 const tbody = el('#tbody');
 
 function kwhMes(item){
   return (item.w * item.h * item.d * item.qty) / 1000.0;
+}
+
+/* gráfico, ranking e dicas*/
+let shareChart = null;
+
+function groupByRoom(){
+  const mapa = {};
+  ITEMS.forEach(it=>{
+    const k = kwhMes(it);
+    mapa[it.room] = (mapa[it.room]||0) + k;
+  });
+  return mapa;
+}
+function renderShareChart(){
+  const canvas = document.getElementById('chartShare');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const porComodo = groupByRoom();
+  const labels = Object.keys(porComodo);
+  const data = Object.values(porComodo);
+
+  if(shareChart){ shareChart.destroy(); }
+  shareChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data }] },
+    options: {
+      plugins: {
+        legend: { position: 'bottom', labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text') || '#e6ebf5' } },
+        tooltip: { callbacks: { label: (c)=> `${c.label}: ${c.parsed.toFixed(2)} kWh/mês` } }
+      },
+      cutout: '55%'
+    }
+  });
+}
+
+function renderTop5(){
+  const t = parseFloat(el('#tarifa').value?.replace(',','.')) || 0;
+  const arr = ITEMS.map(it=>{
+    const k = kwhMes(it);
+    return {nome: it.nome, room: it.room, kwh: k, cost: k*t};
+  }).sort((a,b)=> b.kwh - a.kwh).slice(0,5);
+
+  const body = document.getElementById('top5Body');
+  if(!body) return;
+  body.innerHTML = '';
+  if(arr.length===0){
+    body.innerHTML = `<tr><td colspan="3" style="padding:10px 6px;color:var(--muted)">Adicione alguns aparelhos para ver o ranking.</td></tr>`;
+    return;
+  }
+  arr.forEach(x=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="padding:8px 6px;border-bottom:1px solid var(--border)">${x.nome} <span class="mini">(${x.room})</span></td>
+      <td style="padding:8px 6px;text-align:right;border-bottom:1px solid var(--border)">${x.kwh.toFixed(2)}</td>
+      <td style="padding:8px 6px;text-align:right;border-bottom:1px solid var(--border)">R$ ${x.cost.toFixed(2)}</td>
+    `;
+    body.appendChild(tr);
+  });
+}
+
+function has(sub){
+  const s = (sub||'').toLowerCase();
+  return ITEMS.some(it => (it.nome||'').toLowerCase().includes(s));
+}
+function genTips(){
+  const ul = document.getElementById('tipsList');
+  if(!ul) return;
+  const tips = new Set();
+  const tarifa = parseFloat(el('#tarifa').value?.replace(',','.')) || 0;
+
+  // Alternativos
+  if(has('chuveiro')) tips.add('Banho mais curto e morno: chuveiro é vilão em pico.');
+  if(has('ar-condicionado')) {
+    tips.add('Use 23–24°C e limpe filtros: +1°C pode economizar ~3–5%.');
+    tips.add('Vede portas/janelas; evite ligar com fontes de calor ativas.');
+  }
+  if(has('geladeira')) {
+    tips.add('Ajuste ~4 °C; não abrir toda hora; deixe espaço para ventilação.');
+    tips.add('Cheque borrachas de vedação e evite sol/forno ao lado.');
+  }
+  if(has('secadora') || has('ferro')) tips.add('Agrupe roupas para menos sessões (menos ciclos de aquecimento).');
+  if(has('forno elétrico') || has('air fryer')) tips.add('Pré-aqueça pouco e evite abrir o forno com frequência.');
+  if(has('lâmpada')) tips.add('Use LED e luz natural; sensores em áreas de passagem ajudam.');
+  if(has('roteador')) tips.add('Evite stand-by desnecessário de TVs e consoles à noite.');
+
+  // Gerais
+  if(tarifa) tips.add('Revise sua tarifa (convencional x branca) e bandeiras para ajustar hábitos.');
+  else tips.add('Defina a tarifa (R$/kWh) para ver os impactos em R$.');
+  tips.add('Monitore por 1 semana os maiores aparelhos e compare com o Top 5.');
+  tips.add('Mantenha manutenção em dia (filtros, serpentinas, vedação).');
+
+  ul.innerHTML = '';
+  [...tips].slice(0,7).forEach(txt=>{
+    const li = document.createElement('li'); li.textContent = txt; ul.appendChild(li);
+  });
+}
+
+function updateVisuals(){
+  renderShareChart();
+  renderTop5();
+  genTips();
 }
 
 function recalc(){
@@ -226,6 +359,9 @@ function recalc(){
 
   el('#totalKwh').textContent = fmt(tk);
   el('#totalCost').textContent = `R$ ${fmt(tc)}`;
+
+  // atualiza tudão
+  updateVisuals();
 }
 
 function renderTable(){
@@ -265,7 +401,7 @@ function renderTable(){
   recalc();
 }
 
-// Editor pequeno para personalizar médias, se quiser
+// personalização de médias
 function openEdit(id){
   const it = ITEMS.find(x=>x.id===id);
   const h = prompt(`Horas/dia para "${it.nome}" (atual: ${it.h})`, String(it.h));
@@ -318,11 +454,10 @@ document.querySelectorAll('.room').forEach(r=>{
 
 el('#tarifa').addEventListener('input', recalc);
 
-// Sugestões iniciais (opcional): marcar Sala
 selectRoom(document.querySelector('.room.sala'));
 
-// Qualquer mudança de tamanho/zoom – recalcular formato
 window.addEventListener('load', recalc);
 </script>
 </body>
 </html>
+  
